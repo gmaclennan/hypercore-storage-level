@@ -1,0 +1,10 @@
+node_modules
+
+.DS_Store
+sandbox
+sandbox.js
+bench/cores
+tmp
+
+*.log
+.nyc_output/

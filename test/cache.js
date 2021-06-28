@@ -5,15 +5,12 @@ tape('default options does not use data cache', function (t) {
   var feed = create()
   feed.append(['hello', 'world'], err => {
     t.error(err, 'no error')
-    feed.get(0, function (err, block) {
+    // feed.get() does not use getNode in this storage, so we use audit to fill
+    // the cache
+    feed.audit(function (err) {
       t.error(err, 'no error')
-      t.same(feed._storage.treeCache.byteSize, 40)
-      feed.get(1, function (err, block) {
-        t.error(err, 'no error')
-        t.same(feed._storage.treeCache.byteSize, 80)
-        t.false(feed._storage.dataCache)
-        t.end()
-      })
+      t.same(feed._storage.treeCache.byteSize, 80)
+      t.end()
     })
   })
 })
@@ -60,17 +57,12 @@ tape('can use a custom cache object', function (t) {
   })
   feed.append(['hello', 'world'], err => {
     t.error(err, 'no error')
-    feed.get(0, function (err, block) {
+    feed.audit(function (err, block) {
       t.error(err, 'no error')
-      t.same(dataStorage.length, 1)
-      t.same(treeStorage.length, 1)
-      feed.get(1, function (err, block) {
-        t.error(err, 'no error')
-        t.same(dataStorage.length, 2)
-        // tree storage should have entries at 0 and 2
-        t.same(treeStorage.length, 3)
-        t.end()
-      })
+      t.same(dataStorage.length, 2)
+      // tree storage should have entries at 0 and 2
+      t.same(treeStorage.length, 3)
+      t.end()
     })
   })
 })

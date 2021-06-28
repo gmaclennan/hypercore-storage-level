@@ -1,10 +1,13 @@
 var tape = require('tape')
 var hypercore = require('../')
-var ram = require('random-access-memory')
 var replicate = require('./helpers/replicate')
+var level = require('level-mem')
+var concat = require('concat-stream')
+var sub = require('subleveldown')
+var Storage = require('../lib/storage')
 
 tape('deterministic data and tree', function (t) {
-  t.plan(10)
+  t.plan(20)
 
   var expectedTree = Buffer.from(
     '0502570200002807424c414b4532620000000000000000000000000000000000ab27d45f509274' +
@@ -30,14 +33,20 @@ tape('deterministic data and tree', function (t) {
     var feed = hypercore(st)
 
     feed.append(['a', 'b', 'c', 'd', 'e', 'f'], function () {
-      t.same(st.data.toBuffer().toString(), 'abcdef')
-      t.same(st.tree.toBuffer(), expectedTree)
+      readAll(st, 'data', (err, buf) => {
+        t.error(err)
+        t.same(buf.toString(), 'abcdef', 'data matches')
+      })
+      readAll(st, 'tree', (err, buf) => {
+        t.error(err)
+        t.same(buf, expectedTree, 'tree matches')
+      })
     })
   }
 })
 
 tape('deterministic data and tree after replication', function (t) {
-  t.plan(10)
+  t.plan(20)
 
   var expectedTree = Buffer.from(
     '0502570200002807424c414b4532620000000000000000000000000000000000ab27d45f509274' +
@@ -59,22 +68,29 @@ tape('deterministic data and tree after replication', function (t) {
   for (var i = 0; i < 5; i++) run()
 
   function run () {
-    var feed = hypercore(ram)
+    var feed = hypercore(storage())
 
     feed.append(['a', 'b', 'c', 'd', 'e', 'f'], function () {
       var st = storage()
+      st.log = true
       var clone = hypercore(st, feed.key)
 
       replicate(feed, clone).on('end', function () {
-        t.same(st.data.toBuffer().toString(), 'abcdef')
-        t.same(st.tree.toBuffer(), expectedTree)
+        readAll(st, 'data', (err, buf) => {
+          t.error(err)
+          t.same(buf.toString(), 'abcdef')
+        })
+        readAll(st, 'tree', (err, buf) => {
+          t.error(err)
+          t.same(buf.toString('hex'), expectedTree.toString('hex'))
+        })
       })
     })
   }
 })
 
 tape('deterministic signatures', function (t) {
-  t.plan(20)
+  t.plan(30)
 
   var key = Buffer.from('9718a1ff1c4ca79feac551c0c7212a65e4091278ec886b88be01ee4039682238', 'hex')
   var secretKey = Buffer.from(
@@ -108,18 +124,24 @@ tape('deterministic signatures', function (t) {
     })
 
     feed.append(['a', 'b', 'c'], function () {
-      t.same(st.data.toBuffer().toString(), 'abc')
+      readAll(st, 'data', (err, buf) => {
+        t.error(err)
+        t.same(buf.toString(), 'abc')
+      })
       feed.verify(feed.length - 1, compatExpectedSignatures.slice(-64), function (err, valid) {
         t.error(err, 'no error')
         t.ok(valid, 'compat sigs still valid')
       })
-      t.same(st.signatures.toBuffer().slice(-64), expectedSignature, 'only needs last sig')
+      readAll(st, 'signatures', (err, buf) => {
+        t.error(err)
+        t.same(buf.slice(-64), expectedSignature, 'only needs last sig')
+      })
     })
   }
 })
 
 tape('deterministic signatures after replication', function (t) {
-  t.plan(10)
+  t.plan(20)
 
   var key = Buffer.from('9718a1ff1c4ca79feac551c0c7212a65e4091278ec886b88be01ee4039682238', 'hex')
   var secretKey = Buffer.from(
@@ -137,7 +159,7 @@ tape('deterministic signatures after replication', function (t) {
   for (var i = 0; i < 5; i++) run()
 
   function run () {
-    var feed = hypercore(ram, key, {
+    var feed = hypercore(storage(), key, {
       secretKey: secretKey
     })
 
@@ -146,8 +168,14 @@ tape('deterministic signatures after replication', function (t) {
       var clone = hypercore(st, feed.key)
 
       replicate(feed, clone).on('end', function () {
-        t.same(st.data.toBuffer().toString(), 'abc')
-        t.same(st.signatures.toBuffer().slice(-64), expectedSignature, 'only needs last sig')
+        readAll(st, 'data', (err, buf) => {
+          t.error(err)
+          t.same(buf.toString(), 'abc')
+        })
+        readAll(st, 'signatures', (err, buf) => {
+          t.error(err)
+          t.same(buf.slice(-64), expectedSignature, 'only needs last sig')
+        })
       })
     })
   }
@@ -177,9 +205,19 @@ tape('compat signatures work', function (t) {
     secretKey
   })
 
+  function writeSignatures (cb) {
+    const batch = st.signatures.batch()
+    batch.put(0, compatExpectedSignatures.slice(0, 32))
+    var sigCount = (compatExpectedSignatures.length - 32 / 64)
+    for (var i = 0; i < sigCount; i++) {
+      batch.put(i + 1, compatExpectedSignatures.slice(32 + i * 64, 32 + i * 64 + 64))
+    }
+    batch.write(cb)
+  }
+
   feed.append(['a', 'b', 'c'], function () {
-    st.signatures.write(0, compatExpectedSignatures, function () {
-      var clone = hypercore(ram, key)
+    writeSignatures(function () {
+      var clone = hypercore(storage(), key)
 
       replicate(feed, clone).on('end', function () {
         t.same(clone.length, 3)
@@ -203,7 +241,42 @@ function storage () {
   return create
 
   function create (name) {
-    create[name] = ram()
-    return create[name]
+    const db = level()
+    create[name] = sub(db, '', Storage.encoding)
+    return db
   }
+}
+
+function readAllData (db, cb) {
+  var valueStream = db.createValueStream()
+  valueStream.pipe(concat(buf => cb(null, buf)))
+}
+
+var valueSizes = {
+  tree: 40,
+  signatures: 64
+}
+
+/**
+ * A bit of a hack to make these tests work without too much modification. In
+ * the original hypercore storage, these are sparse files, so empty values are
+ * zeros. In level storage, an empty value does not exist. This function writes
+ * a buffer that matches what would be expected in the original hypercore
+ * fixtures
+ */
+function readAll (st, name, cb) {
+  if (name === 'data') return readAllData(st[name], cb)
+  var db = st[name]
+  var rs = db.createReadStream()
+  var valueSize = valueSizes[name]
+  if (typeof valueSize !== 'number') throw new Error('unknown db name ' + name)
+  rs.pipe(concat((data) => {
+    var length = data[data.length - 1].key
+    var buf = Buffer.alloc(32 + valueSize * length)
+    for (const { key, value } of data) {
+      var offset = key === 0 ? 0 : 32 + (key - 1) * valueSize
+      value.copy(buf, offset)
+    }
+    cb(null, buf)
+  }))
 }

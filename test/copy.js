@@ -355,6 +355,7 @@ function runOps (t, ops) {
     if (next.type === 'copy') {
       copy(next.block, get(next.from), get(next.to), function (err) {
         if (err) {
+          console.log(err)
           t.fail('failed to copy ' + next.block + ' from ' + next.from + ' to ' + next.to)
           t.end()
           return

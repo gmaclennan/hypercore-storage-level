@@ -1,6 +1,9 @@
 var hypercore = require('../..')
-var ram = require('random-access-memory')
+var level = require('level-mem')
 
 module.exports = function create (key, opts) {
-  return hypercore(ram, key, opts)
+  function createStorage (name) {
+    return level()
+  }
+  return hypercore(createStorage, key, opts)
 }

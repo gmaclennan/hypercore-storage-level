@@ -1,5 +1,6 @@
 var create = require('./helpers/create')
 var tape = require('tape')
+var concat = require('concat-stream')
 
 tape('replicate with ack', function (t) {
   var feed = create()

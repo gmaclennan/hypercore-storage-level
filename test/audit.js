@@ -20,7 +20,7 @@ tape('basic audit with bad data', function (t) {
   feed.append('hello')
   feed.append('world', function () {
     // NOTE: Uses internal API of storage to add bad data
-    feed._storage._data.write(0, Buffer.from('H'), function () {
+    feed._storage._data.put(0, Buffer.from('H'), function () {
       t.ok(feed.has(0))
       feed.audit(function (err, report) {
         t.error(err, 'no error')

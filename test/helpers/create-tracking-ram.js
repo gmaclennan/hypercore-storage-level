@@ -1,16 +1,16 @@
-var ram = require('random-access-memory')
+var level = require('level-mem')
 
 module.exports = function () {
   var logByFilename = {}
   var factory = function (filename) {
-    var memory = ram()
+    var memory = level()
     var log = []
     logByFilename[filename] = log
-    return {
-      read: logAndForward('read'),
-      write: logAndForward('write'),
-      del: logAndForward('del')
+    var tracked = {}
+    for (var key of Object.keys(memory)) {
+      tracked[key] = logAndForward(key)
     }
+    return tracked
 
     function logAndForward (op) {
       return function () {

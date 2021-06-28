@@ -1,0 +1,29 @@
+{
+  "name": "hypercore-storage-level",
+  "version": "1.0.0",
+  "description": "Experimental Level storage for Hypercore",
+  "main": "index.js",
+  "scripts": {
+    "test": "standard && tape test/*.js",
+    "cov": "nyc tape test/*.js"
+  },
+  "author": "Gregor MacLennan",
+  "license": "MIT",
+  "devDependencies": {
+    "buffer-from": "^1.1.1",
+    "concat-stream": "^2.0.0",
+    "level-mem": "^5.0.1",
+    "nyc": "^15.1.0",
+    "standard": "^15.0.1",
+    "stream-collector": "^1.0.1",
+    "tape": "^5.0.1"
+  },
+  "dependencies": {
+    "hypercore": "github:gmaclennan/hypercore#custom-storage",
+    "hypercore-cache": "^1.0.2",
+    "level": "^6.0.1",
+    "lexicographic-integer-encoding": "^1.0.1",
+    "subleveldown": "^5.0.1",
+    "uint64be": "^3.0.0"
+  }
+}
